@@ -98,6 +98,34 @@ function between(text, from, to){ const L = String(text).split('\n'); const a = 
 function textSignature(){ const u = me() || {}, c = C();
   return ['', '—', u.name || '', [u.title || u.role, c.name || 'BEMO-SOLUTIONS'].filter(Boolean).join(' · '), [u.email || c.email, u.phone && u.phone !== '—' ? u.phone : c.phone].filter(Boolean).join(' · '), site()].filter((x, k) => k < 2 || x).join('\n'); }
 
-W.brand = {B, mark, quoteDoc, invDoc, emailQuote, emailInvoice, quoteCover, invoiceCover, between, textSignature, site};
+/* ---------------- proposal email (prospects found by Lead Acquisition) ---------------- */
+function emailProposal(p){
+  const P = (html, st) => `<p style="margin:0 0 12px;font-family:${B.sans};font-size:15px;line-height:1.6;color:${B.ink};${st || ''}">${html}</p>`;
+  const tick = t => `<tr><td width="26" valign="top" style="font-family:${B.sans};font-size:15px;line-height:1.5;color:${B.teal};font-weight:800;padding:3px 0">&#10003;</td><td style="font-family:${B.sans};font-size:15px;line-height:1.5;color:${B.ink};padding:3px 0">${esc(t)}</td></tr>`;
+  const button = (href, label) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 4px"><tr><td bgcolor="${B.teal}" style="background:${B.teal};background-image:linear-gradient(135deg,#1592C4,#0A6E86);border-radius:10px">
+    <a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font-family:${B.sans};font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px">${esc(label)} &rarr;</a></td></tr></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 6px;border:1px solid ${B.line};border-radius:14px;border-collapse:separate;overflow:hidden">
+    <tr><td bgcolor="${B.navy}" style="background:${B.navy};padding:18px 22px;border-radius:14px 14px 0 0">
+      <div style="font-family:${B.sans};font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${B.cyan}">A quick idea for ${esc(p.company)}</div>
+      <div style="font-family:${B.serif};font-size:22px;line-height:1.25;font-weight:700;color:#ffffff;margin-top:6px">${esc(p.service)}</div></td></tr>
+    <tr><td height="3" bgcolor="${B.cyan}" style="height:3px;line-height:3px;font-size:0;background:${B.cyan}">&nbsp;</td></tr>
+    <tr><td bgcolor="#ffffff" style="background:#ffffff;padding:20px 22px 22px;border-radius:0 0 14px 14px">
+      ${p.noticed ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px"><tr><td width="3" bgcolor="${B.cyan}" style="background:${B.cyan}">&nbsp;</td><td bgcolor="${B.cyanSoft}" style="background:${B.cyanSoft};padding:10px 14px;font-family:${B.sans};font-size:14px;line-height:1.5;color:${B.ink};border-radius:0 8px 8px 0">${esc(p.noticed)}</td></tr></table>` : ''}
+      ${P(`<b style="color:${B.navy}">${esc(p.point)}</b>`)}
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px">${p.bullets.map(tick).join('')}</table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px"><tr><td bgcolor="${B.panel}" style="background:${B.panel};border:1px solid ${B.line};border-radius:10px;padding:12px 14px;font-family:${B.sans};font-size:14.5px;line-height:1.5;color:${B.ink}">${esc(p.offer)}</td></tr></table>
+      ${p.replyMailto ? button(p.replyMailto, p.cta.label) : ''}
+      ${P(esc(p.cta.line), 'font-size:14px;color:' + B.soft + ';margin-top:8px')}
+      ${P(`<span style="color:${B.soft}">Who we are:</span> ${esc(p.intro)}${p.siteUrl ? ` <a href="${esc(p.siteUrl)}" style="color:${B.teal};font-weight:700;text-decoration:none">See our work at ${esc(p.site)} &rarr;</a>` : ''}`, 'font-size:14px;margin:4px 0 0')}
+      <div style="border-top:1px solid ${B.line};margin:16px 0 0;padding-top:12px;font-family:${B.sans};font-size:11.5px;line-height:1.5;color:${B.soft}">${esc(p.footer.replace(/ or use this link: \S+\.$/, '.'))}${p.optOutUrl ? ` <a href="${esc(p.optOutUrl)}" style="color:${B.soft};text-decoration:underline">Unsubscribe</a>` : ''}</div>
+    </td></tr></table>`;
+}
+/* A preview the CRM can show: the cover lines as they'll appear above the card. */
+function proposalPreview(p){
+  const lines = p.cover.split(/\n{2,}/).map(x => `<p style="margin:0 0 12px;font-family:${B.sans};font-size:15px;line-height:1.6;color:${B.ink}">${esc(x)}</p>`).join('');
+  return `<div style="background:${B.bg};padding:18px"><div style="max-width:620px;margin:0 auto;background:#fff;border-radius:16px;padding:22px 24px">${lines}${emailProposal(p)}
+    <p style="margin:18px 0 0;font-family:${B.sans};font-size:14px;line-height:1.55;color:${B.soft}"><b style="color:${B.navy}">${esc(p.sender.name || '')}</b><br>${esc(p.sender.company || '')}${p.site ? ' · ' + esc(p.site) : ''}</p></div></div>`;
+}
+W.brand = {B, mark, quoteDoc, invDoc, emailQuote, emailInvoice, quoteCover, invoiceCover, between, textSignature, site, emailProposal, proposalPreview};
 W.brandQuoteDoc = quoteDoc; W.brandInvoiceDoc = invDoc;
 })();

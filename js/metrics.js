@@ -55,7 +55,7 @@ function events(){
   // Lead Acquisition conversations (calls, consent requests, emails)
   (DB.acqLeads || []).forEach(l => {
     (l.conversations || []).forEach(x => { if(x.channel === 'Meeting' && /booked/i.test(x.outcome || '')) return;
-      push('contact', x.at, x.by, leadKey[l.id], {channel: String(x.channel || '').toLowerCase(), connected: !/No answer|Consent request sent|Outreach email sent/i.test(x.outcome || ''), lead: true}); });
+      push('contact', x.at, x.by, leadKey[l.id], {channel: String(x.channel || '').toLowerCase(), connected: !/No answer|Consent request sent|Outreach email sent|Proposal sent/i.test(x.outcome || ''), lead: true}); });
     push('found', l.createdAt, null, leadKey[l.id], {lead: true});
     if(l.transfer && l.transfer.at) push('transfer', l.transfer.at, l.transfer.by, leadKey[l.id], {lead: true});
   });

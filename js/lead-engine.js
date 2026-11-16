@@ -66,6 +66,28 @@ E.fromOsm = function(el, industry, town){
   return lead;
 };
 
+/* Which discovery sources a campaign uses. 'maps' = Google Maps listings (Serper), 'web' = web search
+   (Serper -> Tavily -> Brave, whichever is set up). Older campaigns that ticked 'brave' get maps + web. */
+E.DEFAULT_SOURCES = ['osm', 'maps', 'web'];
+E.campaignSources = function(cp){
+  const s = (cp && cp.sources && cp.sources.length) ? cp.sources.slice() : E.DEFAULT_SOURCES.slice();
+  if(s.includes('brave')){ ['maps', 'web'].forEach(x => { if(!s.includes(x)) s.push(x); }); }
+  return s.filter(x => x !== 'brave');
+};
+/* Google Maps listing (Serper /places) -> discovered business */
+E.fromPlace = function(p, industry, town, provider){
+  const now = new Date().toISOString(); provider = provider || 'Google Maps (Serper)';
+  const web = p.website || ''; const ref = p.cid ? 'https://maps.google.com/?cid=' + p.cid : (p.placeId ? 'https://www.google.com/maps/place/?q=place_id:' + p.placeId : null);
+  const src = field => ({field, provider, ref, at: now, usage: 'Public Google Maps business listing, retrieved through the Serper API'});
+  const addr = String(p.address || '');
+  const city = (Object.keys(E.CITY_COORDS || {}).find(c => addr.toLowerCase().includes(c.toLowerCase()))) || town;
+  return {industry, company: {name: String(p.title || '').trim().slice(0, 120), website: web || null, domain: E.normDomain(web) || null, industry, category: p.category || (E.INDUSTRIES[industry] || {}).label,
+      province: E.provinceOf(city) || E.provinceOf(town), city, address: addr || null,
+      phone: p.phoneNumber ? E.makePhone(p.phoneNumber, 'Published company number', provider) : null,
+      rating: p.rating || null, ratingCount: p.ratingCount || null, lat: p.latitude || null, lon: p.longitude || null, socials: []},
+    contacts: [], sources: [src('company'), ...(p.phoneNumber ? [src('phone')] : []), ...(web ? [src('website')] : [])], providerIds: {maps: String(p.cid || p.placeId || '')}};
+};
+
 /* osm: OpenStreetMap tag selectors; kw: search keywords; titles: decision-maker priority (first = best);
    rel: industry relevance to BEMO (0-20); auto: typical admin/automation load (0-20); sensitive: needs compliance review */
 E.INDUSTRIES = {
@@ -485,6 +507,144 @@ E.outreachDraft = function(lead, contact, me, optOutUrl){
       `You are receiving this because you gave us permission to contact you. To stop receiving messages, reply STOP${optOutUrl ? ' or visit ' + optOutUrl : ''}.`
     ].join('\n')
   };
+};
+
+/* ---------------- Proposal emails (short, hook-led, one service) ----------------
+   Two modes, both POPIA s69 aware:
+   - 'first'    : the one permitted first approach. Same pitch, but asks them to reply YES
+                  and promises no further marketing email if they don't.
+   - 'proposal' : the person has given permission, so it ends with a straight call to action. */
+const noun = ind => ({law: 'law firm', accounting: 'accountant', financial: 'financial adviser', insurance: 'insurance broker', consulting: 'consultant', healthcare: 'practice',
+  property: 'estate agent', recruitment: 'recruiter', logistics: 'logistics company', construction: 'contractor', retail: 'store'}[ind] || 'business');
+const clients = ind => ({law: 'clients', accounting: 'clients', healthcare: 'patients', property: 'buyers and tenants', recruitment: 'candidates and clients', logistics: 'customers', retail: 'customers'}[ind] || 'clients');
+const poss = n => /s$/i.test(n) ? n + "'" : n + "'s";
+/* One honest, specific thing we noticed, matched to the service we're pitching. */
+E.noticeLine = function(lead, svcName){
+  const w = lead.website || {}; const n = (lead.company || {}).name || 'your business'; const on = w.status === 'Website found';
+  const opts = [];
+  if(w.status === 'NO WEBSITE FOUND') opts.push(['Website development', `we couldn't find a website for ${n}`]);
+  if(w.status === 'Website unreachable') opts.push(['Website development', `${poss(n)} website didn't load when we checked`]);
+  if(on && w.outdated) opts.push(['Website development', `${poss(n)} website looks a little dated`]);
+  if(on && !w.mobile) opts.push(['Website development', `${poss(n)} website isn't set up properly for phones`]);
+  if(on && !w.contactForm) opts.push(['Customer enquiry automation', `${poss(n)} website has no online enquiry form`]);
+  if(on && !w.booking) opts.push(['Workflow automation', `there's no way to book a consultation with ${n} online`]);
+  if(on && !w.portal) opts.push(['Customer portals', `${n} has no online client portal`]);
+  if(on && !w.chat) opts.push(['AI-powered assistants', `there's no chat or WhatsApp assistant on ${poss(n)} website`]);
+  const hit = opts.find(o => o[0] === svcName) || (svcName === 'Customer enquiry automation' && opts.find(o => o[0] === 'Website development'));
+  return hit ? `We had a quick look and noticed ${hit[1]}.` : '';
+};
+E.PITCH = {
+  'Website development': {
+    subject: c => `${c.name}: what clients see when they Google you`,
+    hook: c => `When someone in ${c.city || 'your area'} searches for ${/^[aeiou]/.test(noun(c.industry)) ? 'an' : 'a'} ${noun(c.industry)}, they decide in seconds who looks trustworthy. ${c.name} should win that moment, every time.`,
+    point: 'We build fast, mobile-first websites that turn visitors into booked enquiries. Designed, built and live in weeks, not months.',
+    bullets: ['Looks sharp and loads fast on every phone', 'Enquiry and booking forms that land straight in your inbox', 'Found on Google for the services you actually sell']},
+  'Customer enquiry automation': {
+    subject: c => `${c.name}: who answers when a client enquires at 8pm?`,
+    hook: c => `Most people go with whoever replies first. If an enquiry to ${c.name} waits until the next morning, that ${clients(c.industry) === 'patients' ? 'patient' : 'client'} may already have called someone else.`,
+    point: 'We set up instant, professional replies and smart follow-ups, so no enquiry slips through, even after hours.',
+    bullets: ['Every enquiry answered within seconds, day or night', 'Automatic follow-ups until they book', 'Every lead in one simple list, nothing forgotten']},
+  'Workflow automation': {
+    subject: c => `${c.name}: fewer phone calls, more booked consultations`,
+    hook: c => `How many hours does ${c.name} spend each week arranging, confirming and rescheduling appointments by phone and email?`,
+    point: 'Clients book themselves online, get reminders automatically, and no-shows drop.',
+    bullets: ['Online booking that works 24/7', 'Automatic confirmations and reminders', 'Synced to your team calendar, so no double-booking']},
+  'Customer portals': {
+    subject: c => `${c.name}: stop chasing ${clients(c.industry)} for documents`,
+    hook: c => `"Did you get my documents?" "Any update?" Imagine those emails to ${c.name} simply stopping.`,
+    point: 'A secure online portal where your clients upload documents and check progress themselves.',
+    bullets: ['Secure uploads instead of lost email attachments', 'Live progress updates your clients can see', 'Hours of admin and phone calls saved every week']},
+  'Business process automation': {
+    subject: c => `${c.name}: get hours of admin back every week`,
+    hook: c => `Onboarding, reminders, follow-ups: the same admin at ${c.name}, every single day. What if it simply ran itself?`,
+    point: 'We automate the repetitive admin behind onboarding, reminders and follow-ups, so your people focus on the work clients pay for.',
+    bullets: ['Onboarding steps that run themselves', 'Reminders and follow-ups sent on time, automatically', 'Fewer errors and nothing forgotten']},
+  'Internal business systems': {
+    subject: c => `${c.name}: replace the spreadsheets and "where is it?" calls`,
+    hook: c => `If tracking jobs at ${c.name} means spreadsheets, WhatsApp groups and phone calls, there is a much faster way.`,
+    point: 'One simple system that shows every job, delivery and status in real time, updated by your team from their phones.',
+    bullets: ['Every job tracked in one place', 'Your team updates it from their phones', 'Customers and managers always know the status']},
+  'Dashboards': {
+    subject: c => `${c.name}: your key numbers, live on one screen`,
+    hook: c => `How long does it take at ${c.name} to answer "How did we do this week?" Minutes, or days?`,
+    point: 'Live dashboards that pull your jobs, sales and cash flow together automatically, so decisions take minutes.',
+    bullets: ['Your numbers updated automatically, no spreadsheets', 'See problems early, not at month-end', 'On your phone, wherever you are']},
+  'CRM integrations': {
+    subject: c => `${c.name}: never lose track of a client again`,
+    hook: c => `When ${clients(c.industry)}, contacts and follow-ups are scattered across inboxes and spreadsheets, deals slip away quietly.`,
+    point: 'A connected CRM that remembers every client, reminds your team what is next and shows where every deal stands.',
+    bullets: ['Every client and conversation in one place', 'Automatic follow-up reminders for your team', 'Connected to the email and tools you already use']},
+  'AI consultancy': {
+    subject: c => `${c.name}: where AI could save you time this month`,
+    hook: c => `Everyone is talking about AI. Very few businesses know exactly where it would save them time and money. ${c.name} can be one of them.`,
+    point: 'A practical, no-jargon AI assessment that pinpoints the quick wins in your business, and what they would be worth to you.',
+    bullets: ['Plain-English review of where time is lost', 'Ranked quick wins with real savings', 'A clear plan, with no obligation to buy anything']},
+  'AI-powered assistants': {
+    subject: c => `${c.name}: an assistant that answers ${clients(c.industry)} 24/7`,
+    hook: c => `What happens when a potential ${clients(c.industry) === 'patients' ? 'patient' : 'client'} visits ${poss(c.name)} website at midnight with a question? Right now, probably nothing.`,
+    point: 'An AI assistant on your website and WhatsApp that answers common questions instantly and captures new leads around the clock.',
+    bullets: ['Instant answers, day and night', 'Captures name, number and need for your team', 'Hands over to a person whenever it should']}
+};
+E.PITCH_DEFAULT = {
+  subject: c => `${c.name}: a quick idea to save time`,
+  hook: c => `Most growing businesses lose hours every week to admin that software could handle. ${c.name} doesn't have to.`,
+  point: 'We build practical automation and software that takes repetitive work off your team.',
+  bullets: ['Built around how you already work', 'Live in weeks, not months', 'Support from a South African team']};
+
+/* Who should get a proposal, and how. Returns {ok, mode, contact, reason}. */
+E.proposalTarget = function(lead, cfg, suppressed){
+  const st = (lead.review || {}).status || 'New';
+  if(['Unsuitable', 'Do not contact', 'Transferred'].includes(st)) return {ok: false, reason: 'Status is ' + st};
+  if(suppressed && E.suppressionKeys(lead).some(k => suppressed.has(k))) return {ok: false, reason: 'On the do-not-contact list'};
+  const list = (lead.contacts || []).filter(x => x.email && !x.dnc && !x.optOut && !(suppressed && suppressed.has('email:' + x.email.toLowerCase())));
+  if(!list.length) return {ok: false, reason: (lead.contacts || []).some(x => x.email) ? 'Opted out or do not contact' : 'No email address'};
+  const best = E.bestContact(lead); const ordered = best && list.includes(best) ? [best].concat(list.filter(x => x !== best)) : list;
+  let why = 'No contact can receive marketing yet';
+  for(const c of ordered){
+    if((lead.proposals || []).some(p => p.contactId === c.id)){ why = 'Proposal already sent'; continue; }
+    const perm = c.permission && c.permission !== 'Consent request permitted' ? c.permission : E.defaultPermission(c, lead, cfg);
+    if(perm === 'Permission confirmed') return {ok: true, mode: 'proposal', contact: c};
+    if(perm === 'Consent request permitted') return {ok: true, mode: 'first', contact: c};
+    why = perm === 'Consent required' ? 'Already approached once; waiting for their YES' : perm === 'Compliance review required' ? 'Compliance review needed first' : perm;
+  }
+  return {ok: false, reason: why};
+};
+
+/* The proposal itself: subject, hook, selling point, 3 bullets, offer and call to action. */
+E.proposal = function(lead, contact, me, opts){
+  opts = opts || {}; const c = Object.assign({industry: lead.industry}, lead.company || {});
+  const svc = opts.service ? {name: opts.service} : ((lead.opportunity && lead.opportunity.services) || E.matchServices(lead))[0] || {name: ''};
+  const P = E.PITCH[svc.name] || E.PITCH_DEFAULT;
+  const first = contact && contact.name ? String(contact.name).replace(/^(Dr|Mr|Mrs|Ms|Adv|Prof)\.?\s+/i, '').split(' ')[0] : '';
+  const site = String(me.website || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const siteUrl = site ? 'https://' + site : '';
+  const src = String(((lead.sources || [])[0] || {}).provider || 'a public business listing').replace(/\s*\(.*\)$/, '');
+  const mode = opts.mode || 'proposal';
+  const offer = `Our offer: a free 20-minute call where we show you exactly how this would work at ${c.name}. No cost, no obligation.`;
+  const cta = mode === 'first'
+    ? {label: 'Reply YES to see how it works', line: `Interested? Just reply "YES" and we'll send a short walkthrough and set up the free call. If we don't hear from you, this is the only email you'll get from us.`}
+    : {label: 'Book my free 20-minute call', line: `Reply with a time that suits you, or call ${me.phone || 'us'}, and we'll set it up.`};
+  const p = {
+    mode, service: svc.name || 'Business automation', company: c.name, first,
+    subject: P.subject(c),
+    greeting: first ? `Hi ${first},` : 'Good day,',
+    hook: P.hook(c),
+    noticed: E.noticeLine(lead, svc.name),
+    point: P.point, bullets: P.bullets.slice(0, 3), offer, cta,
+    intro: `I'm ${me.name || 'the team'} from ${me.company || 'BEMO-SOLUTIONS'}. We help South African businesses work smarter with automation, AI and modern websites.`,
+    site, siteUrl, sender: me,
+    replyMailto: me.email ? 'mailto:' + me.email + '?subject=' + encodeURIComponent((mode === 'first' ? 'YES: ' : 'Free call: ') + c.name) + '&body=' + encodeURIComponent(mode === 'first' ? 'YES, please send me the walkthrough.\n\n' : 'Hi ' + (me.name || '').split(' ')[0] + ',\n\nA good time for the call would be: \n\n') : '',
+    footer: (mode === 'first'
+      ? `Why you received this: we found ${poss(c.name)} business contact details on ${src}. Under section 69 of POPIA we may contact you once to ask whether you'd like to hear from us.`
+      : `You're receiving this because you agreed to hear from ${me.company || 'us'}.`) +
+      ` To never hear from us again, reply STOP${opts.optOutUrl ? ' or use this link: ' + opts.optOutUrl : ''}.`,
+    optOutUrl: opts.optOutUrl || ''
+  };
+  p.text = [p.greeting, '', p.hook, '', p.noticed, p.noticed ? '' : null, p.intro + ' ' + p.point, '', ...p.bullets.map(b => '• ' + b), '', p.offer, '', p.cta.line, '',
+    'Kind regards,', me.name || '', [me.company, me.phone, me.email].filter(Boolean).join(' · '), site ? 'See our work: ' + siteUrl : '', '', '—', p.footer]
+    .filter(x => x !== null).join('\n').replace(/\n{3,}/g, '\n\n');
+  p.cover = [p.greeting, '', p.hook].join('\n');
+  return p;
 };
 
 if(typeof module !== 'undefined' && module.exports) module.exports = E;

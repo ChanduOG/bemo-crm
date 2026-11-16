@@ -13,14 +13,17 @@ const PERM_TONE = {'Permission confirmed': 'green', 'Consent required': 'amber',
 const VER_TONE = {'Verified business': 'green', 'Probable business': 'cyan', 'Unverified business': 'amber', 'Inactive or closed': 'red', 'Unable to determine': 'gray'};
 const PROVIDERS = [
   ['osm', 'OpenStreetMap', 'Free open data (no key). Finds businesses with and without websites. Fair-use limits apply.', 'map'],
-  ['brave', 'Brave Search API', 'Finds businesses’ own websites. Check Brave’s current free allowance.', 'search'],
-  ['apollo', 'Apollo.io', 'Companies and decision-makers. API access depends on your Apollo plan; revealing an email uses a credit.', 'users'],
+  ['serper', 'Serper.dev (Google Maps + Google search)', 'Recommended. Google Maps listings (name, phone, address, website) and Google search. 2,500 free searches when you sign up, no card needed.', 'search'],
+  ['tavily', 'Tavily search', 'Recommended backup. Takes over web searches when Serper is off or used up. 1,000 free searches every month, no card needed.', 'search'],
   ['hunter', 'Hunter.io', 'Business emails per domain and email verification. The free plan has small monthly limits.', 'at-sign'],
   ['snov', 'Snov.io', 'Optional extra email source (off by default).', 'mail-search'],
   ['prospeo', 'Prospeo', 'Optional extra email source (off by default).', 'mail-search'],
-  ['anthropic', 'Claude AI write-ups', 'Optional. Writes the opportunity summary and conversation angle. Paid per use.', 'sparkles']
+  ['anthropic', 'Claude AI write-ups', 'Optional. Writes the opportunity summary and conversation angle. Paid per use.', 'sparkles'],
+  ['brave', 'Brave Search API (optional)', 'Optional extra web search. Brave asks for a card at signup, so it is off by default.', 'search'],
+  ['apollo', 'Apollo.io (optional)', 'Optional companies and decision-makers. API access depends on your Apollo plan, so it is off by default.', 'users']
 ];
-const DEF_PROV = {osm: {enabled: true, daily: 200, monthly: 3000, costZar: 0}, brave: {enabled: true, daily: 60, monthly: 1500, costZar: 0}, apollo: {enabled: true, daily: 20, monthly: 100, costZar: 0, reveal: true},
+const DEF_PROV = {osm: {enabled: true, daily: 200, monthly: 3000, costZar: 0}, serper: {enabled: true, daily: 80, monthly: 800, costZar: 0}, tavily: {enabled: true, daily: 30, monthly: 950, costZar: 0},
+  brave: {enabled: false, daily: 60, monthly: 1500, costZar: 0}, apollo: {enabled: false, daily: 20, monthly: 100, costZar: 0, reveal: true},
   hunter: {enabled: true, daily: 10, monthly: 25, costZar: 0}, snov: {enabled: false, daily: 10, monthly: 50, costZar: 0}, prospeo: {enabled: false, daily: 10, monthly: 50, costZar: 0}, anthropic: {enabled: true, daily: 100, monthly: 1000, costZar: 0.6}};
 
 /* ---------- data helpers ---------- */
@@ -98,7 +101,7 @@ Views.leads = id => {
   const tabs = [['leads', 'Prospects', (DB.acqLeads || []).filter(l => reviewOf(l) === 'New' && !l.belowThreshold).length], ['campaigns', 'Campaigns', (DB.laCampaigns || []).length], ['providers', 'Providers & budget'], ['suppression', 'Do-not-contact list', (DB.laSuppression || []).length], ['setup', 'Connection']];
   const body = tab === 'campaigns' ? campaignsTab() : tab === 'providers' ? providersTab() : tab === 'suppression' ? suppressionTab() : tab === 'setup' ? setupTab() : leadsTab();
   const html = `<div class="page full">${pageHead('Lead Acquisition', 'South African businesses found and researched by the prospecting engine. Call the top of the list first, then approve good ones into your pipeline.',
-    `<button class="btn" data-a="laImport">${ic('upload', 14)}Import CSV</button><button class="btn" data-a="laAdd">${ic('plus', 14)}Add prospect</button><button class="btn pri" data-a="laGoCampaigns">${ic('radar', 14)}Find prospects</button>`)}
+    `<button class="btn" data-a="laPropAll" title="Send a short, tailored proposal to every prospect in the current list that may be emailed">${ic('send', 14)}Send proposals</button><button class="btn" data-a="laImport">${ic('upload', 14)}Import CSV</button><button class="btn" data-a="laAdd">${ic('plus', 14)}Add prospect</button><button class="btn pri" data-a="laGoCampaigns">${ic('radar', 14)}Find prospects</button>`)}
     ${tabsc('laTab', tabs, tab)}${body}</div>`;
   return {html, crumbs: [['Lead Acquisition']], title: 'Lead Acquisition'};
 };
@@ -133,7 +136,7 @@ function leadsTab(){
       ${sl('sort', [['priority', 'Call first'], ['score', 'Highest score'], ['newest', 'Newest'], ['name', 'A–Z']], f.sort, 'Sort')}
       <label class="chk small"><input type="checkbox" data-ch="laF" data-k="below" ${f.below ? 'checked' : ''}>Show below campaign threshold</label>
       <button class="btn ghost sm" data-a="laReset">Reset</button></div></div>
-      ${sel.size ? `<div class="la-bulk"><b>${sel.size} selected</b>${[['Reviewed', 'Mark reviewed'], ['Approved for contact', 'Approve for contact'], ['Unsuitable', 'Unsuitable'], ['Do not contact', 'Do not contact']].map(([s, l]) => `<button class="btn sm ${s === 'Do not contact' ? 'danger' : ''}" data-a="laBulk" data-s="${s}">${l}</button>`).join('')}<button class="btn sm" data-a="laBulkEnrich">${ic('coins', 13)}Approve enrichment</button>${W.can && can('delete_data') ? `<button class="btn sm danger" data-a="laBulkDel">${ic('trash-2', 13)}Delete</button>` : ''}<button class="btn ghost sm" data-a="laSelNone">Clear</button></div>` : ''}
+      ${sel.size ? `<div class="la-bulk"><b>${sel.size} selected</b>${[['Reviewed', 'Mark reviewed'], ['Approved for contact', 'Approve for contact'], ['Unsuitable', 'Unsuitable'], ['Do not contact', 'Do not contact']].map(([s, l]) => `<button class="btn sm ${s === 'Do not contact' ? 'danger' : ''}" data-a="laBulk" data-s="${s}">${l}</button>`).join('')}<button class="btn sm pri" data-a="laPropSel">${ic('send', 13)}Send proposals</button><button class="btn sm" data-a="laBulkEnrich">${ic('coins', 13)}Approve enrichment</button>${W.can && can('delete_data') ? `<button class="btn sm danger" data-a="laBulkDel">${ic('trash-2', 13)}Delete</button>` : ''}<button class="btn ghost sm" data-a="laSelNone">Clear</button></div>` : ''}
       ${rows.length ? `<div class="tw"><table class="tbl la-tbl"><thead><tr><th style="width:30px"><input type="checkbox" data-ch="laSelAll" ${view.length && view.every(l => sel.has(l.id)) ? 'checked' : ''} aria-label="Select page"></th><th>Business</th><th>Location</th><th>Website</th><th class="r">Score</th><th>Decision-maker</th><th>Phone</th><th>Email</th><th>Verification</th><th>Suggested service</th><th>Found</th><th>Status</th></tr></thead><tbody>
       ${view.map(l => { const c = LE.bestContact(l); const p = bestPhone(l); const e = bestEmail(l); return `<tr data-go="leads-${l.id}" class="${(l.score || {}).readyToContact ? '' : 'la-dim'}">
         <td><input type="checkbox" data-ch="laSel" data-id="${l.id}" ${sel.has(l.id) ? 'checked' : ''} aria-label="Select ${esc(l.company.name)}"></td>
@@ -165,7 +168,7 @@ function detail(l){
         ${(x.phones || []).map(ph => `<div>${ic('phone', 13)} <span class="num">${esc(LE.fmtPhone(ph.e164))}</span> ${badge(ph.status, /^Verified/.test(ph.status) ? 'green' : 'gray', 'nodot')} <span class="muted xs">${esc(ph.kind)}</span>${blocked ? '' : ` <a class="btn xs" href="tel:${ph.e164}">${ic('phone-call', 12)}Call</a>`} <button class="ib sm" data-a="laCopy" data-v="${ph.e164}" aria-label="Copy number">${ic('copy', 13)}</button></div>`).join('')}
         ${x.profileUrl ? `<div>${ic('linkedin', 13)} <a href="${esc(x.profileUrl)}" target="_blank" rel="noopener">Professional profile</a></div>` : ''}
         <div class="muted xs">Found by ${esc((x.foundBy || [x.source]).filter(Boolean).join(', ') || 'unknown')} · collected ${x.collectedAt ? fmtD(String(x.collectedAt).slice(0, 10)) : '—'} · keep until ${x.retainUntil ? fmtD(x.retainUntil) : '—'}${x.consentRequest && x.consentRequest.sentAt ? ` · consent request sent ${fmtD(String(x.consentRequest.sentAt).slice(0, 10))}` : ''}</div></div>
-      ${blocked || done ? '' : `<div class="row wrap" style="gap:6px;margin-top:8px"><button class="btn xs" data-a="laScript" data-id="${l.id}" data-c="${x.id}">${ic('scroll-text', 12)}Call script</button>${x.email ? `<button class="btn xs" data-a="laDraft" data-id="${l.id}" data-c="${x.id}">${ic('mail', 12)}${perm === 'Permission confirmed' ? 'Outreach email' : 'Consent request'}</button>` : ''}<button class="btn xs" data-a="laConsent" data-id="${l.id}" data-c="${x.id}">${ic('badge-check', 12)}Record consent</button>${perm === 'Compliance review required' ? `<button class="btn xs" data-a="laClear" data-id="${l.id}" data-c="${x.id}">${ic('shield-check', 12)}Mark compliance reviewed</button>` : ''}<button class="btn xs danger" data-a="laDncContact" data-id="${l.id}" data-c="${x.id}">${ic('ban', 12)}Do not contact</button></div>`}</div>`;
+      ${blocked || done ? '' : `<div class="row wrap" style="gap:6px;margin-top:8px"><button class="btn xs" data-a="laScript" data-id="${l.id}" data-c="${x.id}">${ic('scroll-text', 12)}Call script</button>${x.email ? `<button class="btn xs" data-a="laDraft" data-id="${l.id}" data-c="${x.id}">${ic('mail', 12)}${perm === 'Permission confirmed' ? 'Outreach email' : 'Consent request'}</button><button class="btn xs" data-a="laPropOne" data-id="${l.id}">${ic('send', 12)}Send proposal</button>` : ''}<button class="btn xs" data-a="laConsent" data-id="${l.id}" data-c="${x.id}">${ic('badge-check', 12)}Record consent</button>${perm === 'Compliance review required' ? `<button class="btn xs" data-a="laClear" data-id="${l.id}" data-c="${x.id}">${ic('shield-check', 12)}Mark compliance reviewed</button>` : ''}<button class="btn xs danger" data-a="laDncContact" data-id="${l.id}" data-c="${x.id}">${ic('ban', 12)}Do not contact</button></div>`}</div>`;
   };
   const conv = (l.conversations || []).slice().reverse();
   const html = `<div class="page">
@@ -267,6 +270,84 @@ A.laSent = d => { const l = lead(d.id), c = l.contacts.find(x => x.id === d.c); 
   (l.conversations = l.conversations || []).push({at: nowStamp(), by: DB.me, channel: 'Email', outcome: 'Consent request sent', contact: c.name || c.email, notes: document.getElementById('la-sub').value});
   if(['New', 'Reviewed', 'Approved for contact'].includes(reviewOf(l))) setReview(l, 'Contacted'); closeTop(); commit('Consent request recorded. No further requests can be sent to this person.'); };
 A.laSentMk = d => { const l = lead(d.id), c = l.contacts.find(x => x.id === d.c); (l.conversations = l.conversations || []).push({at: nowStamp(), by: DB.me, channel: 'Email', outcome: 'Outreach email sent', contact: c.name || c.email, notes: document.getElementById('la-sub').value}); setReview(l, 'Contacted'); closeTop(); commit('Logged'); };
+/* ---------- proposal emails (bulk or one) ---------- */
+const sendLive = () => !!(W.WebsiteSync && W.WebsiteSync.connected && W.WebsiteSync.connected());
+const sentToday = () => (DB.acqLeads || []).reduce((n, l) => n + (l.proposals || []).filter(p => String(p.at || '').slice(0, 10) === TODAY).length, 0);
+const propCap = () => Math.max(1, +cfg().proposalDailyCap || 80);
+let PROP = null;
+function proposalPlan(ids){
+  const sup = new Set((DB.laSuppression || []).map(s => s.value)); const me_ = sender();
+  const ready = [], skipped = {};
+  ids.map(lead).filter(Boolean).forEach(l => {
+    ensureTokens(l); const t = LE.proposalTarget(l, cfg(), sup);
+    if(!t.ok){ skipped[t.reason] = (skipped[t.reason] || 0) + 1; return; }
+    const p = LE.proposal(l, t.contact, me_, {mode: t.mode, optOutUrl: optUrl(t.contact)});
+    ready.push({id: l.id, contactId: t.contact.id, to: t.contact.email, p});
+  });
+  return {ready, skipped};
+}
+function openProposals(ids){
+  ensure(); const plan = proposalPlan(ids); const left = Math.max(0, propCap() - sentToday());
+  PROP = Object.assign(plan, {i: 0, left, sending: false});
+  modal({title: 'Send proposal emails', size: 'xl', render: propBody, foot: propFoot});
+}
+function propFoot(){
+  const n = Math.min(PROP.ready.length, PROP.left); const me_ = sender();
+  const blocked = !sendLive() || !me_.name || !me_.email || !n;
+  return `<button class="btn ghost" data-a="closeTop">Cancel</button><button class="btn pri" data-a="laPropSend" ${blocked || PROP.sending ? 'disabled' : ''}>${ic('send', 14)}Send ${n} proposal${n === 1 ? '' : 's'}</button>`;
+}
+function propBody(){
+  const P = PROP, me_ = sender(), cur = P.ready[P.i];
+  const first = P.ready.filter(r => r.p.mode === 'first').length, perm = P.ready.length - first;
+  const warn = [];
+  if(!sendLive()) warn.push('Emails send through your n8n website workflow, which isn’t connected. Connect it under <b>Settings → Website sync</b> first.');
+  if(!me_.name || !me_.email) warn.push('Add your sender name and email under <b>Lead Acquisition → Providers & budget → Sender identity</b>.');
+  if(!cfg().optOutUrl) warn.push('No opt-out link is set, so emails rely on “reply STOP”. Add it under <b>Providers & budget</b>.');
+  if(P.ready.length > P.left) warn.push(`Only <b>${P.left}</b> more can go out today (daily limit ${propCap()}, to protect your email reputation and Brevo’s free cap). The rest stay ready for tomorrow.`);
+  const skipped = Object.entries(P.skipped);
+  return `${warn.map(w => `<div class="callout amber" style="margin-bottom:10px">${ic('alert-triangle', 15)}<span>${w}</span></div>`).join('')}
+    <div class="grid g-21" style="align-items:start"><div class="stack">
+      ${cur ? `<div class="row between wrap" style="gap:8px;margin-bottom:8px"><div><div class="cell-t">To: ${esc(cur.to)}</div><div class="cell-s">Subject: <b>${esc(cur.p.subject)}</b></div></div>
+        <div class="row" style="gap:6px"><button class="btn sm" data-a="laPropNav" data-n="-1" ${P.i ? '' : 'disabled'}>${ic('chevron-left', 13)}</button><span class="muted small">${P.i + 1} of ${P.ready.length}</span><button class="btn sm" data-a="laPropNav" data-n="1" ${P.i < P.ready.length - 1 ? '' : 'disabled'}>${ic('chevron-right', 13)}</button></div></div>
+        <iframe title="Email preview" style="width:100%;height:560px;border:1px solid var(--line);border-radius:12px;background:#fff" srcdoc="${esc('<!doctype html><meta charset=utf-8><body style=margin:0>' + brand.proposalPreview(cur.p))}"></iframe>`
+      : empty('mail-x', 'No one here can receive a proposal yet', 'See the reasons on the right.')}
+    </div><div class="stack">
+      ${card(`${ic('send', 15)} Ready to send`, `<dl class="kv" style="grid-template-columns:1fr auto"><dt>Proposals ready</dt><dd><b>${P.ready.length}</b></dd><dt>First contact (asks for a YES)</dt><dd>${first}</dd><dt>Gave permission (straight pitch)</dt><dd>${perm}</dd><dt>Sent today</dt><dd>${sentToday()} of ${propCap()}</dd></dl>
+        <div id="lp-prog" class="small muted" style="margin-top:8px"></div>`)}
+      ${skipped.length ? card(`${ic('filter', 15)} Skipped`, `<dl class="kv" style="grid-template-columns:1fr auto">${skipped.map(([r, n]) => `<dt>${esc(r)}</dt><dd>${n}</dd>`).join('')}</dl>`) : ''}
+      ${card(`${ic('shield', 15)} How this stays POPIA-safe`, `<ul class="la-how small" style="margin:0;padding-left:18px"><li>Each email pitches the service the engine recommends for that business, with one thing we noticed.</li><li>People we haven’t contacted before get <b>one</b> email asking them to reply YES. The CRM then blocks further marketing to them until they say yes.</li><li>Every email says who you are, where we found them, links to your website and has an unsubscribe link.</li><li>Opted-out, do-not-contact and already-emailed people are skipped automatically.</li></ul>`)}
+    </div></div>`;
+}
+A.laPropAll = () => openProposals(filtered().map(l => l.id));
+A.laPropSel = () => openProposals(Array.from(UI.v.laSel || []));
+A.laPropOne = d => openProposals([d.id]);
+A.laPropNav = d => { PROP.i = Math.max(0, Math.min(PROP.ready.length - 1, PROP.i + (+d.n))); refreshLayers(); };
+A.laPropSend = async () => {
+  if(PROP.sending) return; PROP.sending = true;
+  const btn = document.querySelector('[data-a="laPropSend"]'); if(btn) btn.disabled = true;
+  const me_ = sender(), u = me() || {}; const list = PROP.ready.slice(0, PROP.left); let ok = 0; const fails = [];
+  const prog = () => { const el = document.getElementById('lp-prog'); if(el) el.innerHTML = `Sending… <b>${ok + fails.length}</b> of ${list.length}${fails.length ? ` · ${fails.length} failed` : ''}`; };
+  for(const r of list){
+    prog();
+    try {
+      await W.WebsiteSync.post({action: 'send', to: r.to, subject: r.p.subject, text: r.p.text, cover: r.p.cover, html: brand.emailProposal(r.p), signatureAfter: true,
+        fromName: `${me_.name || u.name} | ${me_.company || 'BEMO-SOLUTIONS'}`, signature: {name: me_.name || u.name, title: u.title || u.role || ''}, quote: null});
+      const l = lead(r.id), c = (l.contacts || []).find(x => x.id === r.contactId); const at = new Date().toISOString();
+      (l.proposals = l.proposals || []).push({at, by: DB.me, contactId: r.contactId, to: r.to, subject: r.p.subject, service: r.p.service, mode: r.p.mode});
+      if(r.p.mode === 'first' && c){ c.consentRequest = {sentAt: at, by: DB.me, channel: 'Email (proposal)'}; c.permission = 'Consent required'; }
+      (l.conversations = l.conversations || []).push({at: nowStamp(), by: DB.me, channel: 'Email', outcome: 'Proposal sent', contact: (c && (c.name || c.email)) || r.to, notes: `${r.p.service}: ${r.p.subject}`});
+      if(['New', 'Reviewed', 'Approved for contact'].includes(reviewOf(l))) setReview(l, 'Contacted');
+      l.updatedAt = at; ok++;
+      if(ok % 10 === 0) save();
+    } catch(e){ fails.push(r.to + ': ' + (e && e.message || 'failed')); }
+    await new Promise(res => setTimeout(res, 1200));
+  }
+  prog(); PROP.sending = false;
+  if(ok) log(`Sent ${ok} proposal email${ok === 1 ? '' : 's'}`, null, 'leads', 'note');
+  UI.v.laSel = new Set(); closeTop();
+  commit(fails.length ? `${ok} sent, ${fails.length} failed. The failed ones stay ready to retry.` : `${ok} proposal${ok === 1 ? '' : 's'} sent`);
+  if(fails.length) console.warn('Proposal send failures', fails);
+};
 A.laConsent = d => { const l = lead(d.id), c = l.contacts.find(x => x.id === d.c);
   modal({title: 'Record consent', body: `<div class="form-grid">${field('Their answer', `<select class="sel" id="lc-st"><option value="given">Yes, they agreed to hear from us</option><option value="refused">No / asked not to be contacted</option></select>`, 'span2')}${field('How they said it', `<select class="sel" id="lc-src">${opts(['Replied to consent email', 'Phone call', 'In person / meeting', 'Website form', 'WhatsApp'])}</select>`)}${field('Date', `<input class="inp" type="date" id="lc-dt" value="${TODAY}">`)}${field('Notes (what exactly they agreed to)', `<textarea class="ta" id="lc-n"></textarea>`, 'span2')}</div>`,
     foot: `<button class="btn ghost" data-a="closeTop">Cancel</button><button class="btn pri" data-a="laConsentSave" data-id="${l.id}" data-c="${c.id}">Save</button>`}); };
@@ -388,7 +469,7 @@ A.laImportRun = () => { const f = document.getElementById('li-f').files[0]; if(!
 
 /* ---------- campaigns ---------- */
 const SIZES = [['1,10', '1–10'], ['11,50', '11–50'], ['51,200', '51–200'], ['201,500', '201–500']];
-const SRC = [['osm', 'OpenStreetMap'], ['brave', 'Brave Search'], ['apollo', 'Apollo']];
+const SRC = [['osm', 'OpenStreetMap'], ['maps', 'Google Maps'], ['web', 'Web search'], ['apollo', 'Apollo (optional)']];
 const EXAMPLES = {
   A: {name: 'Law firms · Gauteng', industries: ['law'], provinces: ['Gauteng'], cities: [], sizes: ['1,10', '11,50', '51,200'], websiteFilter: 'any', titles: ['owner', 'managing partner', 'practice manager'], minScore: 70},
   B: {name: 'Accounting · Free State (weak websites)', industries: ['accounting'], provinces: ['Free State'], cities: [], sizes: [], websiteFilter: 'outdated', titles: ['owner', 'managing partner'], minScore: 60},
@@ -400,7 +481,7 @@ function campaignsTab(){
     ${list.length ? `<div class="grid g2">${list.map(c => { const st = c.lastStats || {}; return card(`${esc(c.name)} ${badge(c.status || 'Paused', c.status === 'Active' ? 'green' : 'gray')}`,
       `<dl class="kv" style="grid-template-columns:110px 1fr"><dt>Industries</dt><dd>${esc((c.industries || []).map(i => (IND[i] || {}).label || i).join(', ') || '—')}</dd><dt>Area</dt><dd>${esc((c.cities || []).length ? c.cities.join(', ') : (c.provinces || []).length ? c.provinces.join(', ') : 'Nationwide')}</dd>
        <dt>Looking for</dt><dd>${esc({any: 'Any website', none: 'No website found', outdated: 'No or outdated website', has: 'Has a website'}[c.websiteFilter || 'any'])} · score ${c.minScore || 0}+ · ${c.quantity || 25} per run</dd><dt>Decision-makers</dt><dd>${esc((c.titles || []).join(', ') || 'Industry defaults')}</dd>
-       <dt>Sources</dt><dd>${esc((c.sources || ['osm', 'brave', 'apollo']).map(s => (SRC.find(x => x[0] === s) || [s, s])[1]).join(', '))}</dd><dt>Schedule</dt><dd>Every ${c.everyHours || 24} hours</dd>
+       <dt>Sources</dt><dd>${esc(LE.campaignSources(c).map(s => (SRC.find(x => x[0] === s) || [s, s])[1]).join(', '))}</dd><dt>Schedule</dt><dd>Every ${c.everyHours || 24} hours</dd>
        <dt>Last run</dt><dd>${c.lastRun ? fmtDT(String(c.lastRun).replace(' ', 'T').slice(0, 16)) + ` · ${st.created || 0} new, ${st.updated || 0} refreshed, ${st.known || 0} already known${(st.towns || []).length ? ' · ' + esc(st.towns.join(', ')) : ''}` : '<span class="muted">Not run yet</span>'}${c.runRequested ? ' · <b>run requested</b>' : ''}</dd><dt>Found in total</dt><dd>${c.totalFound || 0}</dd></dl>`,
       {act: `<button class="btn sm" data-a="laRun" data-id="${c.id}">${ic('play', 13)}Run now</button><button class="ib sm" data-a="laCamp" data-id="${c.id}" aria-label="Edit">${ic('pencil', 14)}</button><button class="ib sm" data-a="laCampDel" data-id="${c.id}" aria-label="Delete">${ic('trash-2', 14)}</button>`}); }).join('')}</div>`
     : card(null, empty('radar', 'No campaigns yet', 'Start from an example or build your own.', `<div class="row wrap" style="gap:6px;justify-content:center">${Object.keys(EXAMPLES).map(k => `<button class="btn sm" data-a="laCamp" data-ex="${k}">${esc(EXAMPLES[k].name)}</button>`).join('')}</div>`))}`;
@@ -408,7 +489,8 @@ function campaignsTab(){
 let CF = null;
 A.laCamp = d => {
   const ex = d.id ? (DB.laCampaigns || []).find(c => c.id === d.id) : null;
-  CF = JSON.parse(JSON.stringify(ex || Object.assign({name: '', status: 'Active', industries: [], provinces: [], cities: [], keywords: [], sizes: [], websiteFilter: 'any', titles: [], minScore: 50, quantity: 25, townsPerRun: 3, radiusKm: 15, sources: ['osm', 'brave', 'apollo'], everyHours: 24}, d.ex ? EXAMPLES[d.ex] : {})));
+  CF = JSON.parse(JSON.stringify(ex || Object.assign({name: '', status: 'Active', industries: [], provinces: [], cities: [], keywords: [], sizes: [], websiteFilter: 'any', titles: [], minScore: 50, quantity: 25, townsPerRun: 3, radiusKm: 15, sources: LE.DEFAULT_SOURCES.slice(), everyHours: 24}, d.ex ? EXAMPLES[d.ex] : {})));
+  CF.sources = LE.campaignSources(CF);
   modal({title: ex ? 'Edit campaign' : 'New campaign', size: 'xl', render: campForm, foot: `<button class="btn ghost" data-a="closeTop">Cancel</button><button class="btn pri" data-a="laCampSave" data-id="${ex ? ex.id : ''}">${ex ? 'Save' : 'Create and run'}</button>`});
 };
 function campForm(){
@@ -462,10 +544,11 @@ function providersTab(){
     ${card(`${ic('activity', 15)} Recent engine activity`, STATS && (STATS.recent || []).length ? `<div class="tw" style="max-height:360px;overflow:auto"><table class="tbl"><thead><tr><th>When</th><th>What</th><th>Provider</th><th>Result</th><th>Detail</th></tr></thead><tbody>${STATS.recent.map(e => `<tr><td class="small muted nowrap">${esc(String(e.at).slice(5, 16).replace('T', ' '))}</td><td class="small">${esc(e.request_type || e.kind)}</td><td class="small">${esc(e.provider || '—')}</td><td>${badge(e.status, e.status === 'ok' ? 'green' : e.status === 'skipped' ? 'gray' : /suppress|opted/.test(e.status) ? 'amber' : 'red', 'nodot')}</td><td class="wrap small muted" style="min-width:220px">${esc(e.message || '')}</td></tr>`).join('')}</tbody></table></div>` : empty('activity', W.CLOUD_ON ? 'No engine activity yet' : 'Available once the CRM is online', W.CLOUD_ON ? 'Run the n8n workflow to see requests, credits and errors here.' : 'The engine writes its activity to Supabase.'), {flush: true})}</div>
     <div class="stack">${card(`${ic('wallet', 15)} Budget & rules`, `<div class="col gap-12">
       ${field('Monthly provider budget (R)', `<input class="inp num" type="number" min="0" value="${L.monthlyBudgetZar}" data-ch="laSet" data-k="monthlyBudgetZar" ${admin ? '' : 'disabled'}><span class="muted xs">A cap on paid usage across all providers. 0 means no cap.</span>`)}
+      ${field('Proposal emails per day', `<input class="inp num" type="number" min="1" max="250" value="${L.proposalDailyCap || 80}" data-ch="laSet" data-k="proposalDailyCap" ${admin ? '' : 'disabled'}><span class="muted xs">Brevo’s free plan sends 300 emails a day in total. Keep this lower so new domains build a good reputation.</span>`)}
       ${field('Look up people automatically from score', `<input class="inp num" type="number" min="0" max="100" value="${L.autoEnrichScore}" data-ch="laSet" data-k="autoEnrichScore" ${admin ? '' : 'disabled'}><span class="muted xs">Below this, credits are only spent when you approve enrichment.</span>`)}
       ${field('AI write-ups from score', `<input class="inp num" type="number" min="0" max="101" value="${L.aiMinScore}" data-ch="laSet" data-k="aiMinScore" ${admin ? '' : 'disabled'}>`)}
       ${field('Keep prospect personal data for (months)', `<input class="inp num" type="number" min="1" max="60" value="${L.retentionMonths}" data-ch="laSet" data-k="retentionMonths" ${admin ? '' : 'disabled'}>`)}
-      ${field('Opt-out link (n8n LA-07 production URL)', `<input class="inp" placeholder="https://your-n8n/webhook/bemo-optout" value="${esc(L.optOutUrl || '')}" data-ch="laSet" data-k="optOutUrl" ${admin ? '' : 'disabled'}>`)}</div>`)}
+      ${field('Opt-out link (n8n "Opt-out link" production URL)', `<input class="inp" placeholder="https://your-n8n/webhook/bemo-optout" value="${esc(L.optOutUrl || '')}" data-ch="laSet" data-k="optOutUrl" ${admin ? '' : 'disabled'}>`)}</div>`)}
       ${card(`${ic('contact', 15)} Sender identity`, `<p class="muted small" style="margin-bottom:10px">Shown on every consent request and outreach email.</p><div class="col gap-12">${['name', 'company', 'email', 'phone', 'address'].map(k => field({name: 'Your name', company: 'Company', email: 'Reply email', phone: 'Phone', address: 'Physical address'}[k], `<input class="inp" value="${esc(L.sender[k] || '')}" data-ch="laSender" data-k="${k}" ${admin ? '' : 'disabled'}>`)).join('')}</div>`)}</div></div>`;
 }
 A.laProv = (v, d) => { cfg().providers[d.p][d.k] = Math.max(0, +v || 0); save(); };
@@ -496,7 +579,7 @@ function setupTab(){
     ${step((DB.laCampaigns || []).some(c => c.status === 'Active'), 'At least one active campaign', 'Campaigns tell the engine which industries and towns to search.')}
     ${step(!!cfg().optOutUrl, 'Opt-out link set', 'Lets people remove themselves with one click (POPIA).')}
     ${step(!!(cfg().sender.name && cfg().sender.email), 'Sender identity set', 'Every message must say who it is from.')}</div>`)}
-    ${card(`${ic('book-open', 15)} How it works`, `<ol class="la-how"><li><b>Discover:</b> OpenStreetMap, Brave Search and Apollo find businesses in your chosen industries and towns, with or without websites.</li><li><b>Audit:</b> each business’s public website is checked (mobile, forms, booking, portal…), respecting robots.txt.</li><li><b>Enrich:</b> for promising businesses only, Apollo and Hunter look up decision-makers and verify emails, within your limits.</li><li><b>Score:</b> a 0–100 opportunity score with reasons, plus suggested services and a conversation angle.</li><li><b>Comply:</b> opt-outs and objections go on a permanent do-not-contact list that the engine checks every time.</li><li><b>You:</b> call the top of the list, record the conversation, book a meeting and approve good prospects into your normal pipeline.</li></ol><p class="muted xs">Setup steps: BEMO-Complete-Setup-Guide.pdf, Part 11.</p>`)}</div>`;
+    ${card(`${ic('book-open', 15)} How it works`, `<ol class="la-how"><li><b>Discover:</b> OpenStreetMap, Google Maps and web search (Serper, with Tavily as backup) find businesses in your chosen industries and towns, with or without websites.</li><li><b>Audit:</b> each business’s public website is checked (mobile, forms, booking, portal…), respecting robots.txt.</li><li><b>Enrich:</b> for promising businesses only, the business’s own website and Hunter (plus Apollo if you switch it on) find decision-makers and verify emails, within your limits.</li><li><b>Score:</b> a 0–100 opportunity score with reasons, plus suggested services and a conversation angle.</li><li><b>Comply:</b> opt-outs and objections go on a permanent do-not-contact list that the engine checks every time.</li><li><b>You:</b> call the top of the list, record the conversation, book a meeting and approve good prospects into your normal pipeline.</li></ol><p class="muted xs">Setup steps: BEMO-Complete-Setup-Guide.pdf, Part 11.</p>`)}</div>`;
 }
 
 /* ---------- navigation, roles, counts ---------- */
